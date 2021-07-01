@@ -22,15 +22,25 @@ namespace Database
                 var initializer = new Initializer();
                 initializer.SeedCity(context);
             }
+
+            if (!context.WeatherRecords.Any())
+            {
+                var initializer = new Initializer();
+                initializer.SeedWeather(context);
+            }
         }
 
         public Common.User AddUser (string email, string password)
         {
+            if (email is null || password is null)
+            {
+                return null;
+            }
             using var context = new WeatherDiaryContext(ContextOptions);
             var user = new User { Email = email, Password = password };
             context.Users.Add(user);
             context.SaveChanges();
-            return new Common.User { Email = user.Email, Password = user.Password };
+            return ConvertToCommon(user);
         }
 
         public bool ContainsUser (string email)
@@ -44,7 +54,7 @@ namespace Database
         {
             using var context = new WeatherDiaryContext(ContextOptions);
             return context.Cities
-                .Select(c => ConvertToCommon(c))
+                .Select(ConvertToCommon)
                 .ToList();
         }
 
@@ -59,12 +69,7 @@ namespace Database
         public Common.City GetCity (string name)
         {
             using var context = new WeatherDiaryContext(ContextOptions);
-            var city = context.Cities
-                .Include(c => c.UserCities)
-                    .ThenInclude(uc => uc.User)
-                .Include(c => c.WeatherRecords)
-                    .ThenInclude(wr => wr.WeatherIndicator)
-                .FirstOrDefault(c => c.Name == name);
+            var city = context.Cities.FirstOrDefault(c => c.Name == name);
             return ConvertToCommon(city);
         }
 
@@ -90,14 +95,54 @@ namespace Database
                 .ToList();
         }
 
+        public List<Common.WeatherRecord> GetRecords (string userEmail, string cityName)
+        {
+            using var context = new WeatherDiaryContext(ContextOptions);
+            var user = context.Users.FirstOrDefault(u => u.Email == userEmail);
+            var city = context.Cities.FirstOrDefault(c => c.Name == cityName);
+
+            var userCity = context.UserCities
+                .FirstOrDefault(uc => uc.UserId == user.Id && uc.CityId == city.Id && !uc.DateEnd.HasValue);
+            context.Entry(userCity)
+                .Reference(uc => uc.City)
+                .Load();
+            context.Entry(userCity.City)
+                .Collection(c => c.WeatherRecords)
+                .Load();
+            foreach (var wr in userCity.City.WeatherRecords)
+            {
+                context.Entry(wr)
+                    .Reference(wr => wr.WeatherIndicator)
+                    .Load();
+                context.Entry(wr)
+                    .Reference(wr => wr.City)
+                    .Load();
+            }
+            return userCity.City.WeatherRecords
+                .Where(wr => wr.Date >= userCity.DateStart)
+                .Select(ConvertToCommon)
+                .ToList();
+        }
+
         public List<string> GetSubscribedCityNamesForUser (string userEmail)
         {
             using var context = new WeatherDiaryContext(ContextOptions);
             var user = context.Users
-                .Include(u => u.UserCities)
-                    .ThenInclude(uc => uc.City)
                 .FirstOrDefault(u => u.Email == userEmail);
-            return user?.UserCities
+            if (user is null)
+            {
+                return new List<string>();
+            }
+            context.Entry(user)
+                .Collection(u => u.UserCities)
+                .Load();
+            foreach (var uc in user.UserCities)
+            {
+                context.Entry(uc)
+                    .Reference(uc => uc.City)
+                    .Load();
+            }
+            return user.UserCities
                 .Where(uc => !uc.DateEnd.HasValue)
                 .Select(uc => uc.City.Name)
                 .ToList() ?? new List<string>();
@@ -107,11 +152,13 @@ namespace Database
         {
             using var context = new WeatherDiaryContext(ContextOptions);
             var user = context.Users
-                .Include(u => u.UserCities)
-                    .ThenInclude(uc => uc.City)
                 .FirstOrDefault(user =>
                     user.Email == email &&
                     user.Password == password);
+            if (user is null)
+            {
+                return null;
+            }
             return ConvertToCommon(user);
         }
 

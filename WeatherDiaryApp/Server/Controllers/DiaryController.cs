@@ -1,31 +1,28 @@
-﻿using Common;
+﻿using System;
+using Common;
 using Database;
 using Microsoft.AspNetCore.Mvc;
 using Server.Infrastructure;
 using Server.Models;
-using System.Collections.Generic;
-using System.Linq;
 using Microsoft.AspNetCore.Authorization;
+using User = Common.User;
 
 namespace Server.Controllers
 {
-#if !DEBUG
     [Authorize]
-#endif
     public class DiaryController : Controller
     {
+        private IWeatherDiaryRepository repository;
         public DiaryController(IWeatherDiaryRepository repository)
         {
             this.repository = repository;
         }
 
-        private IWeatherDiaryRepository repository;
-
         [HttpGet]
         public IActionResult Subscribe()
         {
             string email = HttpContext.User.Identity.Name;
-            var model = new SubscribeViewModel(email, null, repository);
+            var model = new SubscribeViewModel(email, repository);
             return View(model);
         }
 
@@ -33,13 +30,14 @@ namespace Server.Controllers
         public IActionResult Subscribe([FromForm] SelectCity city)
         {
             string email = HttpContext.User.Identity.Name;
-            string message = "Выберите город";
+            string errorMessage = "Выберите город";
+            var model = new SubscribeViewModel(email, repository, errorMessage: errorMessage);
             if (isCityNameCorrect(city))
             {
                 repository.StartDiary(email, city.Name);
-                message = "Дневник успешно добавлен";
+                var successMessage = "Дневник успешно добавлен";
+                model = new SubscribeViewModel(email, repository, successMessage: successMessage);
             }
-            var model = new SubscribeViewModel(email, message, repository);
             return View(model);
         }
 
@@ -54,15 +52,21 @@ namespace Server.Controllers
         [HttpPost]
         public IActionResult Select([FromForm] SelectDiaryOptions options)
         {
-            var myoptions = options;
-            return RedirectToAction("Show", new { options = myoptions});
+            if(options.CityName == null)
+            {
+                string email = HttpContext.User.Identity.Name;
+                var errorMessage = "Выберите город";
+                var model = new SelectDiaryViewModel(email, repository, errorMessage: errorMessage);
+                return View(model);
+            }
+            return Show(options);
         }
 
         [HttpGet]
         public IActionResult Unsubscribe()
         {
             string email = HttpContext.User.Identity.Name;
-            var model = new UnsubscribeViewModel(email, null, repository);
+            var model = new UnsubscribeViewModel(email, repository);
             return View(model);
         }
 
@@ -70,29 +74,23 @@ namespace Server.Controllers
         public IActionResult Unsubscribe([FromForm] SelectCity city)
         {
             string email = HttpContext.User.Identity.Name;
-            string message = "Вы отписались от всех дневников";
+            string errorMessage = "Вы отписались от всех дневников";
+            var model = new UnsubscribeViewModel(email, repository, errorMessage: errorMessage);
             if (isCityNameCorrect(city))
             {
                 repository.StopDiary(email, city.Name);
-                message = "Дневник успешно остановлен";
+                var successMessage = "Дневник успешно остановлен";
+                model = new UnsubscribeViewModel(email, repository, successMessage: successMessage);
             }
-            var model = new UnsubscribeViewModel(email, message, repository);
             return View(model);
         }
 
-        [HttpGet]
-        public IActionResult Show()
+        private IActionResult Show(SelectDiaryOptions options)
         {
-            var model = new ShowDiaryViewModel();
-            return View(model);
-        }
-
-        [HttpPost]
-        public IActionResult Show(SelectDiaryOptions options)
-        {
-            string email = HttpContext.User.Identity.Name;
-            var model = new ShowDiaryViewModel(email, repository, options);
-            return View(model);
+            var email = HttpContext.User.Identity.Name;
+            var records = repository.GetRecords(email, options.CityName);
+            var viewModel = new ShowDiaryViewModel() { Options = options, Records = records };
+            return View("Show", viewModel);
         }
 
         private bool isCityNameCorrect(SelectCity city)

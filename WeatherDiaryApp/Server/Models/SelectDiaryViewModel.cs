@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Database;
 using Server.Infrastructure;
 
-namespace Server
+namespace Server.Models
 {
     //класс для view главной страницы
     public class SelectDiaryViewModel
     {
 
-        public SelectDiaryViewModel(string userEmail, IWeatherDiaryRepository repository)
+        public SelectDiaryViewModel(string userEmail, IWeatherDiaryRepository repository, string errorMessage = null)
         {
             Cities = repository.GetSubscribedCityNamesForUser(userEmail).OrderBy(c => c);
             WeatherСonditions = new[]
@@ -23,9 +21,11 @@ namespace Server
                                     new WeatherCondition() { NameEn = "Cloudy", NameRu = "Облачность" },
                                     new WeatherCondition() { NameEn = "Phenomena", NameRu = "Явление" }
                                 };
+            ErrorMessage = errorMessage;
         }
 
         public IEnumerable<string> Cities { get; set; }
         public IEnumerable<WeatherCondition> WeatherСonditions { get; set; }
+        public string ErrorMessage { get; set; }
     }
 }
